@@ -424,6 +424,8 @@ function Block-Device ([parameter(Mandatory, ValueFromPipeline)] [Device] $Devic
  }
 }
 
+#.OUTPUTS
+# A Device object with the updated access control state.
 function Update-ConnectedDevice ([Device] $device, [AccessControl] $access)
 {
 	switch ($device.Connection)
@@ -439,6 +441,8 @@ function Update-ConnectedDevice ([Device] $device, [AccessControl] $access)
 		break
 	 }
 	}
+
+	Get-Device -Force | Where-Object MacAddress -eq $device.MacAddress
 }
 
 #.PARAMETER access

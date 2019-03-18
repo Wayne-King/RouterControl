@@ -520,8 +520,10 @@ describe 'Unblock-Device and Block-Device' {
 }
 
 describe 'Update-ConnectedDevice' {
-	$onlineDevice = New-Object 'Device' -Property @{ Connection = 'Online' }
+	$onlineDevice = New-Object 'Device' -Property @{ Connection = 'Online'; MacAddress = 'AA:BB:CC:DD:EE:FF' }
 	$offlineDevice = New-Object 'Device' -Property @{ Connection = 'Offline' }
+
+	mock 'Get-Device'
 
 	it 'calls Update-OnlineDevice when the device is online' {
 		mock 'Update-OnlineDevice' -Verifiable
@@ -532,6 +534,19 @@ describe 'Update-ConnectedDevice' {
 		mock 'Update-OfflineDevice' -Verifiable
 		Update-ConnectedDevice $offlineDevice 'Unknown'
 		Assert-VerifiableMocks
+	}
+	context 'output' {
+		mock 'Update-OnlineDevice'
+		mock 'Get-Device' { @{ MacAddress = 'AA:BB:CC:DD:EE:FF' } } -ParameterFilter { $Force } -Verifiable
+
+		$result = Update-ConnectedDevice $onlineDevice 'Blocked'
+
+		it 'calls Get-Device with -Force' {
+			Assert-VerifiableMocks
+		}
+		it 'outputs a copy of input device with the new status' {
+			$result | should not be $null
+		}
 	}
 }
 
