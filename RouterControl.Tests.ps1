@@ -424,20 +424,14 @@ describe 'ComposeRuleSettingsPostbackValue' {
 }
 
 describe 'Unblock-Device and Block-Device' {
-	$onlineAllowed = New-Object 'Device' -Property @{
-			Name = 'On-A'; MacAddress = 'AA:BB:CC:DD:EE:FF'; Connection = 'Online'; AccessControl = 'Allowed' }
-	$onlineBlocked = New-Object 'Device' -Property @{
-			Name = 'On-B'; MacAddress = '11:22:33:44:55:66'; Connection = 'Online'; AccessControl = 'Blocked' }
-			
-	$offlineAllowed = New-Object 'Device' -Property @{
-			Name = 'Off-A'; MacAddress = 'FF:EE:DD:CC:BB:AA'; Connection = 'Offline'; AccessControl = 'Allowed' }
-	$offlineBlocked = New-Object 'Device' -Property @{
-			Name = 'Off-B'; MacAddress = '66:55:44:33:22:11'; Connection = 'Offline'; AccessControl = 'Blocked' }
-
+	$allowedDevice = New-Object 'Device' -Property @{
+			Name = 'Allowed'; MacAddress = 'AA:BB:CC:DD:EE:FF'; AccessControl = 'Allowed' }
+	$blockedDevice = New-Object 'Device' -Property @{
+			Name = 'Blocked'; MacAddress = '11:22:33:44:55:66'; AccessControl = 'Blocked' }
 	$unknownDevice = New-Object 'Device' -Property @{
 			Name = 'Unknown'; MacAddress = 'AA:AA:AA:BB:BB:BB' }
 
-	mock 'Get-Device' { @( $onlineAllowed, $onlineBlocked, $offlineAllowed, $offlineBlocked ) }
+	mock 'Get-Device' { @( $allowedDevice, $blockedDevice ) }
 	mock 'GetPostFieldsForDeviceUpdate'
 	mock 'Invoke-RouterControlPostback'
 
@@ -451,21 +445,14 @@ describe 'Unblock-Device and Block-Device' {
 		it 'logs a message when the device is already allowed' {
 			mock 'Write-Log' -ParameterFilter { -not $Warn } -Verifiable
 
-			Unblock-Device $onlineAllowed | should be $null
+			Unblock-Device $allowedDevice | should be $null
 			Assert-VerifiableMocks
 		}
-		it 'calls Update-Device when the device is Online' {
-			mock 'Update-Device' -ParameterFilter { $access -eq 'Allowed' }
-			Unblock-Device $onlineBlocked
-		}
-		it 'calls Remove-Device and Add-Device when the device is Offline' {
-			$script:callSequence = ''
-			mock 'Remove-Device' { $script:callSequence += 'Remove;' } -Verifiable
-			mock 'Add-Device' { $script:callSequence += 'Add;' } -ParameterFilter { $access -eq 'Allowed' } -Verifiable
+		it 'calls Update-ConnectedDevice' {
+			mock 'Update-ConnectedDevice' -ParameterFilter { $access -eq 'Allowed' } -Verifiable
 
-			Unblock-Device $offlineBlocked
+			Unblock-Device $blockedDevice
 			Assert-VerifiableMocks
-			$callSequence | should be 'Remove;Add;'
 		}
 	}
 	context 'Block-Device' {
@@ -478,29 +465,23 @@ describe 'Unblock-Device and Block-Device' {
 		it 'logs a message when the device is already blocked' {
 			mock 'Write-Log' -ParameterFilter { -not $Warn } -Verifiable
 			
-			Block-Device $onlineBlocked | should be $null
+			Block-Device $blockedDevice | should be $null
 			Assert-VerifiableMocks
 		}
-		it 'calls Update-Device when the device is Online' {
-			mock 'Update-Device' -ParameterFilter { $access -eq 'Blocked' }
-			Block-Device $onlineAllowed
-		}
-		it 'calls Remove-Device and Add-Device when the device is Offline' {
-			$script:callSequence = ''
-			mock 'Remove-Device' { $script:callSequence += 'Remove;' } -Verifiable
-			mock 'Add-Device' { $script:callSequence += 'Add;' } -ParameterFilter { $access -eq 'Blocked' } -Verifiable
+		it 'calls Update-ConnectedDevice' {
+			mock 'Update-ConnectedDevice' -ParameterFilter { $access -eq 'Blocked' } -Verifiable
 
-			Block-Device $offlineAllowed
+			Block-Device $allowedDevice
 			Assert-VerifiableMocks
-			$callSequence | should be 'Remove;Add;'
 		}
 	}
 
 	context 'Block-Device pipeline input' {
 		it 'accepts pipeline input' {
-			mock 'Invoke-RouterControlPostback' -Verifiable
+			mock 'Get-Device' -Verifiable
+			mock 'Write-Log'
 
-			$onlineAllowed | Block-Device
+			$unknownDevice | Block-Device
 			Assert-VerifiableMocks
 		}
 	}
@@ -509,7 +490,7 @@ describe 'Unblock-Device and Block-Device' {
 			mock 'Write-Error'
 			mock 'Get-Device'
 
-			@($onlineAllowed, $offlineAllowed) | Block-Device
+			@($allowedDevice, $blockedDevice) | Block-Device
 
 			Assert-MockCalled 'Write-Error' -ParameterFilter { $Exception -is [NotSupportedException] }
 			Assert-MockCalled 'Get-Device' -Times 0 -Exactly
@@ -518,9 +499,10 @@ describe 'Unblock-Device and Block-Device' {
 
 	context 'Unblock-Device pipeline input' {
 		it 'accepts pipeline input' {
-			mock 'Invoke-RouterControlPostback' -Verifiable
+			mock 'Get-Device' -Verifiable
+			mock 'Write-Log'
 
-			$onlineBlocked | Unblock-Device
+			$unknownDevice | Unblock-Device
 			Assert-VerifiableMocks
 		}
 	}
@@ -529,7 +511,7 @@ describe 'Unblock-Device and Block-Device' {
 			mock 'Write-Error'
 			mock 'Get-Device'
 
-			@($onlineBlocked, $offlineBlocked) | Unblock-Device
+			@($blockedDevice, $allowedDevice) | Unblock-Device
 
 			Assert-MockCalled 'Write-Error' -ParameterFilter { $Exception -is [NotSupportedException] }
 			Assert-MockCalled 'Get-Device' -Times 0 -Exactly
@@ -537,7 +519,23 @@ describe 'Unblock-Device and Block-Device' {
 	}
 }
 
-describe 'Update-Device' {
+describe 'Update-ConnectedDevice' {
+	$onlineDevice = New-Object 'Device' -Property @{ Connection = 'Online' }
+	$offlineDevice = New-Object 'Device' -Property @{ Connection = 'Offline' }
+
+	it 'calls Update-OnlineDevice when the device is online' {
+		mock 'Update-OnlineDevice' -Verifiable
+		Update-ConnectedDevice $onlineDevice 'Unknown'
+		Assert-VerifiableMocks
+	}
+	it 'calls Update-OfflineDevice when the device is offline' {
+		mock 'Update-OfflineDevice' -Verifiable
+		Update-ConnectedDevice $offlineDevice 'Unknown'
+		Assert-VerifiableMocks
+	}
+}
+
+describe 'Update-OnlineDevice' {
 	it 'acquires post fields & POSTs' {
 		$fakeDevice = New-Object 'Device'
 
@@ -549,9 +547,30 @@ describe 'Update-Device' {
 		mock 'Invoke-RouterControlPostback' -ParameterFilter {
 				$fields -eq 'fields' } -Verifiable
 
-		Update-Device $fakeDevice 'Blocked'
-		Update-Device $fakeDevice 'Allowed'
+		Update-OnlineDevice $fakeDevice 'Blocked'
+		Update-OnlineDevice $fakeDevice 'Allowed'
 		Assert-VerifiableMocks
+	}
+}
+
+describe 'Update-OfflineDevice' {
+	$fakeDevice = New-Object 'Device'
+	$script:callSequence = ''
+	mock 'Remove-Device' { $script:callSequence += 'Remove;' } -ParameterFilter {
+			$device -eq $fakeDevice } -Verifiable
+	mock 'Add-Device' { $script:callSequence += 'Add;' } -ParameterFilter {
+			$device -eq $fakeDevice -and $access -eq 'Blocked' } -Verifiable
+	mock 'Add-Device' { $script:callSequence += 'Add;' } -ParameterFilter {
+			$device -eq $fakeDevice -and $access -eq 'Allowed' } -Verifiable
+	
+	Update-OfflineDevice $fakeDevice 'Blocked'
+	Update-OfflineDevice $fakeDevice 'Allowed'
+	
+	it 'calls Remove-Device and Add-Device with correct parameters' {
+		Assert-VerifiableMocks
+	}
+	it 'calls Remove-Device, then Add-Device' {
+		$callSequence | should be 'Remove;Add;Remove;Add;'
 	}
 }
 

@@ -379,20 +379,7 @@ function Unblock-Device ([parameter(Mandatory, ValueFromPipeline)] [Device] $Dev
 			return
 		}
 
-		switch ($current.Connection)
-		{
-		 'Online'
-		 {
-			Update-Device $Device 'Allowed'
-			break
-		 }
-		 'Offline'
-		 {
-			Remove-Device $Device
-			Add-Device $Device 'Allowed'
-			break
-		 }
-		}
+		Update-ConnectedDevice $current 'Allowed'
 	}
  }
 }
@@ -432,30 +419,42 @@ function Block-Device ([parameter(Mandatory, ValueFromPipeline)] [Device] $Devic
 			return
 		}
 
-		switch ($current.Connection)
-		{
-		 'Online'
-		 {
-			Update-Device $Device 'Blocked'
-			break
-		 }
-		 'Offline'
-		 {
-			Remove-Device $Device
-			Add-Device $Device 'Blocked'
-			break
-		 }
-		}
+		Update-ConnectedDevice $current 'Blocked'
 	}
  }
 }
 
+function Update-ConnectedDevice ([Device] $device, [AccessControl] $access)
+{
+	switch ($device.Connection)
+	{
+	 'Online'
+	 {
+		Update-OnlineDevice $device $access
+		break
+	 }
+	 'Offline'
+	 {
+		Update-OfflineDevice $device $access
+		break
+	 }
+	}
+}
+
 #.PARAMETER access
 # The desired access control for the device.
-function Update-Device ([Device] $device, [AccessControl] $access)
+function Update-OnlineDevice ([Device] $device, [AccessControl] $access)
 {
 	$postFields = GetPostFieldsForDeviceUpdate $device $access
 	Invoke-RouterControlPostback $postFields
+}
+
+#.PARAMETER access
+# The desired access control for the device.
+function Update-OfflineDevice ([Device] $device, [AccessControl] $access)
+{
+	Remove-Device $device
+	Add-Device $device $access
 }
 
 function Remove-Device ([Device] $device)
