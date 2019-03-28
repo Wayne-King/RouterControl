@@ -7,6 +7,34 @@ InModuleScope RouterControl `
 $DataPath = 'TestDrive:'
 
 
+describe 'Write-Log' {
+	mock 'Write-Information' -MockWith { $Message -eq 'message' } -Verifiable
+	Write-Log 'message'
+
+	it 'calls Write-Information' {
+		Assert-VerifiableMocks
+	}
+	it 'writes to log file' {
+		Test-Path "$DataPath\$LogFilename" -Type Leaf | should be $true 
+	}
+}
+
+describe 'Warn-Log' {
+	mock 'Write-Warning' -MockWith { $Message -eq 'message' } -Verifiable
+	Warn-Log 'message'
+
+	it 'calls Write-Warning' {
+		Assert-VerifiableMocks
+	}
+	it 'writes to log file' {
+		Test-Path "$DataPath\$LogFilename" -Type Leaf | should be $true 
+	}
+	it 'writes "warning" text to log file' {
+		Select-String -Path "$DataPath\$LogFilename" -Pattern 'WARNING' -CaseSensitive -SimpleMatch -Quiet |
+				should be $true
+	}
+}
+
 describe 'Test-RouterCredential' {
 	it 'returns false when no cred' {
 		Test-RouterCredential | should be $false
@@ -101,7 +129,7 @@ describe 'Assert-KnownDevice' {
 
 describe 'Get-KnownDevice' {
 	it 'logs warning when no previously imported devices exist' {
-		mock 'Write-Warning' -Verifiable
+		mock 'Warn-Log' -Verifiable
 		Get-KnownDevice
 		Assert-VerifiableMocks
 	}
@@ -212,7 +240,7 @@ describe 'Invoke-RouterControlPostback' {
 	}
 	context 'non-success response' {
 		mock 'Invoke-WebRequest' { '{ "StatusCode": 400 }' | ConvertFrom-Json }
-		mock 'Write-Log' -ParameterFilter { $Warn } -Verifiable
+		mock 'Warn-Log' -Verifiable
 
 		it 'logs a warning when response status is not successful' {
 			Invoke-RouterControlPostback
@@ -437,13 +465,13 @@ describe 'Unblock-Device and Block-Device' {
 
 	context 'Unblock-Device' {
 		it 'logs a warning when the device is not recognized' {
-			mock 'Write-Log' -ParameterFilter { $Warn } -Verifiable
+			mock 'Warn-Log' -Verifiable
 
 			Unblock-Device $unknownDevice | should be $null
 			Assert-VerifiableMocks
 		}
 		it 'logs a message when the device is already allowed' {
-			mock 'Write-Log' -ParameterFilter { -not $Warn } -Verifiable
+			mock 'Write-Log' -Verifiable
 
 			Unblock-Device $allowedDevice | should be $null
 			Assert-VerifiableMocks
@@ -457,13 +485,13 @@ describe 'Unblock-Device and Block-Device' {
 	}
 	context 'Block-Device' {
 		it 'logs a warning when the device is not recognized' {
-			mock 'Write-Log' -ParameterFilter { $Warn } -Verifiable
+			mock 'Warn-Log' -Verifiable
 			
 			Block-Device $unknownDevice | should be $null
 			Assert-VerifiableMocks
 		}
 		it 'logs a message when the device is already blocked' {
-			mock 'Write-Log' -ParameterFilter { -not $Warn } -Verifiable
+			mock 'Write-Log' -Verifiable
 			
 			Block-Device $blockedDevice | should be $null
 			Assert-VerifiableMocks
@@ -479,7 +507,7 @@ describe 'Unblock-Device and Block-Device' {
 	context 'Block-Device pipeline input' {
 		it 'accepts pipeline input' {
 			mock 'Get-Device' -Verifiable
-			mock 'Write-Log'
+			mock 'Warn-Log'
 
 			$unknownDevice | Block-Device
 			Assert-VerifiableMocks
@@ -500,7 +528,7 @@ describe 'Unblock-Device and Block-Device' {
 	context 'Unblock-Device pipeline input' {
 		it 'accepts pipeline input' {
 			mock 'Get-Device' -Verifiable
-			mock 'Write-Log'
+			mock 'Warn-Log'
 
 			$unknownDevice | Unblock-Device
 			Assert-VerifiableMocks
@@ -594,7 +622,7 @@ describe 'Remove-Device' {
 	$offlineDevice = [Device] @{ Connection = 'Offline' }
 
 	it 'logs a warning when the device is not Offline' {
-		mock 'Write-Log' -ParameterFilter { $Warn } -Verifiable
+		mock 'Warn-Log' -Verifiable
 
 		Remove-Device $onlineDevice
 		Assert-VerifiableMocks
@@ -747,9 +775,9 @@ describe 'GetPostFieldsForDeviceAdd' {
 
 describe 'Get-CleanedMac' {
 	$device = New-Object 'Device'
-	$script:writeLogCount = 0
+	$script:warnLogCount = 0
 
-	mock 'Write-Log' -ParameterFilter { $Warn } { Write-Debug "warn msg: $message"}
+	mock 'Warn-Log' { Write-Debug "warn msg: $message"}
 
 	it 'warns when MAC is <descrip>' -TestCases @(
 			@{ descrip = 'too short'; 		mac = 'AA:BB:CC:DD:EE' },
@@ -764,8 +792,8 @@ describe 'Get-CleanedMac' {
 		$device.MacAddress = $mac
 		Get-CleanedMac $device | should be $null
 
-		$script:writeLogCount++
-		Assert-MockCalled 'Write-Log' -Times $writeLogCount -Exactly
+		$script:warnLogCount++
+		Assert-MockCalled 'Warn-Log' -Times $warnLogCount -Exactly
 	}
 	it "removes ':' and '-' delimiters" {
 		$device.MacAddress = 'AA:BB:CC:DD-EE-FF'
@@ -792,9 +820,9 @@ describe 'IsMulticastMac' {
 
 describe 'Get-CleanedName' {
 	$device = New-Object 'Device'
-	$script:writeLogCount = 0
+	$script:warnLogCount = 0
 
-	mock 'Write-Log' -ParameterFilter { $Warn } { Write-Debug "warn msg: $message"}
+	mock 'Warn-Log' { Write-Debug "warn msg: $message"}
 
 	it 'warns when name is <descrip>' -TestCases @(
 			@{ descrip = 'null'; name = $null },
@@ -808,8 +836,8 @@ describe 'Get-CleanedName' {
 		$device.DetectedName = $name
 		Get-CleanedName $device | should be $null
 
-		$script:writeLogCount++
-		Assert-MockCalled 'Write-Log' -Times $writeLogCount -Exactly
+		$script:warnLogCount++
+		Assert-MockCalled 'Warn-Log' -Times $warnLogCount -Exactly
 	}
 	it 'prefers Name over DetectedName' {
 		$device.Name = 'Name Value'

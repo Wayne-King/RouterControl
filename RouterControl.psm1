@@ -32,18 +32,19 @@ class Device
 	[AccessControl] $AccessControl
 }
 
-function Write-Log ([string] $message, [switch] $Warn)
+function Write-Log ([string] $message)
 {
-	if ($Warn)
-	{
-		Write-Warning $message
-		'{0}: WARNING: {1}' -f (Get-Date), $message >> "$DataPath\$LogFilename"
-	}
-	else
-	{
-		Write-Information $message
-		'{0}: {1}' -f (Get-Date), $message >> "$DataPath\$LogFilename"
-	}
+	Write-Information $message
+	'{0}: {1}' -f (Get-Date), $message >> "$DataPath\$LogFilename"
+}
+
+function Warn-Log #([string] $message)
+{
+	[Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
+	param ([string] $message)
+
+	Write-Warning $message
+	'{0}: WARNING: {1}' -f (Get-Date), $message >> "$DataPath\$LogFilename"
 }
 
 #.SYNOPSIS
@@ -148,7 +149,7 @@ function Get-KnownDevice
 	}
 	else
 	{
-		Write-Warning 'A set of known devices (and their names) has not been provided; call Import-KnownDeviceCsv to provide it.'
+		Warn-Log 'A set of known devices (and their names) has not been provided; call Import-KnownDeviceCsv to provide it.'
 	}
 }
 
@@ -369,7 +370,7 @@ function Unblock-Device ([parameter(Mandatory, ValueFromPipeline)] [Device] $Dev
 
 		if (-not $current)
 		{
-			Write-Log "Cannot Unblock-Device for device with MAC '$($Device.MacAddress)' because that device is not among the devices known by the router." -Warn
+			Warn-Log "Cannot Unblock-Device for device with MAC '$($Device.MacAddress)' because that device is not among the devices known by the router."
 			return
 		}
 
@@ -409,7 +410,7 @@ function Block-Device ([parameter(Mandatory, ValueFromPipeline)] [Device] $Devic
 
 		if (-not $current)
 		{
-			Write-Log "Cannot Block-Device for device with MAC '$($Device.MacAddress)' because that device is not among the devices known by the router." -Warn
+			Warn-Log "Cannot Block-Device for device with MAC '$($Device.MacAddress)' because that device is not among the devices known by the router."
 			return
 		}
 
@@ -467,7 +468,7 @@ function Remove-Device ([Device] $device)
 	#  is accurate; otherwise, should lookup device & its Connection via Get-Device
 	if ($device.Connection -ne 'Offline')
 	{
-		Write-Log "Cannot Remove-Device for device with MAC '$($device.MacAddress)' because that device is not among the devices listed by the router as Connnection Offline." -Warn
+		Warn-Log "Cannot Remove-Device for device with MAC '$($device.MacAddress)' because that device is not among the devices listed by the router as Connnection Offline."
 		return
 	}
 
@@ -621,15 +622,15 @@ function Get-CleanedMac ([Device] $device)
 
 	if ($mac -notmatch '^[0-9A-F]{12}$')
 	{
-		Write-Log "The MAC '$original' has invalid characters or incorrect length and cannot be used." -Warn
+		Warn-Log "The MAC '$original' has invalid characters or incorrect length and cannot be used."
 	}
 	elseif ($mac -match '^[F0]*$')
 	{
-		Write-Log "The MAC '$original' is meaningless and cannot be used." -Warn
+		Warn-Log "The MAC '$original' is meaningless and cannot be used."
 	}
 	elseif (IsMulticastMac $mac)
 	{
-		Write-Log "The MAC '$original' cannot be used because it is multicast." -Warn
+		Warn-Log "The MAC '$original' cannot be used because it is multicast."
 	}
 	else
 	{
@@ -654,11 +655,11 @@ function Get-CleanedName ([Device] $device)
 
 	if ([string]::IsNullOrWhiteSpace($name))
 	{
-		Write-Log "The device name '$name' cannot be used because it is empty or only whitespace." -Warn
+		Warn-Log "The device name '$name' cannot be used because it is empty or only whitespace."
 	}
 	elseif ($name -match '[^\x20-\x7e]')
 	{
-		Write-Log "The device name '$name' has invalid characters and cannot be used." -Warn
+		Warn-Log "The device name '$name' has invalid characters and cannot be used."
 	}
 	else
 	{
@@ -687,7 +688,7 @@ function Invoke-RouterControlPostback ($fields)
 	}
 	else
 	{
-		Write-Log "Non-success response status code '$($resp.StatusCode)' when posting back from router control page." -Warn
+		Warn-Log "Non-success response status code '$($resp.StatusCode)' when posting back from router control page."
 	}
 
 	# no output (for now)
@@ -707,7 +708,7 @@ function Invoke-RouterControlAddPage
 	}
 	else
 	{
-		Write-Log "Non-success response status code '$($resp.StatusCode)' when getting router control add page." -Warn
+		Warn-Log "Non-success response status code '$($resp.StatusCode)' when getting router control add page."
 	}
 
 	# return just the form instead of whole response
@@ -735,7 +736,7 @@ function Invoke-RouterControlAddPostback ($form, $fields)
 	}
 	else
 	{
-		Write-Log "Non-success response status code '$($resp.StatusCode)' when posting back from router control add page." -Warn
+		Warn-Log "Non-success response status code '$($resp.StatusCode)' when posting back from router control add page."
 	}
 
 	# no output (for now)
