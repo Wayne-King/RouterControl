@@ -636,6 +636,123 @@ describe 'Remove-Device' {
 	}
 }
 
+describe 'Enable-AccessControl' {
+	it 'acquires post fields & POSTs when device access is not specified' {
+		mock 'GetPostFieldsForAccessControlEnable' { 'fieldsNoDevice' }
+		mock 'Invoke-RouterControlPostback' -ParameterFilter {
+				$fields -eq 'fieldsNoDevice' } -Verifiable
+
+		Enable-AccessControl
+		Assert-VerifiableMocks
+	}
+	it 'acquires post fields & POSTs when device access is specified' {
+		mock 'GetPostFieldsForAccessControlEnable' { 'fieldsBlocked' } -ParameterFilter {
+				$NewDeviceAccess -eq 'Blocked' } -Verifiable
+		mock 'Invoke-RouterControlPostback' -ParameterFilter {
+				$fields -eq 'fieldsBlocked' } -Verifiable
+
+		Enable-AccessControl 'Blocked'
+		Assert-VerifiableMocks
+	}
+	it 'clears the cached html page {after effecting the change}' {
+		# don't know simple way to verify when clear-cache is called
+
+		mock 'GetPostFieldsForAccessControlEnable'
+		mock 'Invoke-RouterControlPostback'
+
+		mock 'Clear-CachedObject' -ParameterFilter {
+				$name -eq 'Invoke-RouterControlPage' } -Verifiable
+
+		Enable-AccessControl
+		Assert-VerifiableMocks
+	}
+}
+
+describe 'Disable-AccessControl' {
+	it 'acquires post fields and POSTs' {
+		mock 'GetPostFieldsForAccessControlDisable' { 'fields' }
+		mock 'Invoke-RouterControlPostback' -ParameterFilter {
+				$fields -eq 'fields' } -Verifiable
+
+		Disable-AccessControl
+		Assert-VerifiableMocks
+	}
+	it 'clears the cached html page {after effecting the change}' {
+		# don't know simple way to verify when clear-cache is called
+
+		mock 'GetPostFieldsForAccessControlDisable'
+		mock 'Invoke-RouterControlPostback'
+
+		mock 'Clear-CachedObject' -ParameterFilter {
+				$name -eq 'Invoke-RouterControlPage' } -Verifiable
+
+		Disable-AccessControl
+		Assert-VerifiableMocks
+	}
+}
+
+#.SYNOPSIS
+# Compose a fake that looks like an HTML response object with a Form and its fields.
+function ComposeFormFieldsFake ([hashtable] $fields)
+{
+	$fake = '{ "Forms" : [ { "Fields" : "stub" } ] }' | ConvertFrom-Json
+	$fake.Forms[0].Fields = $fields
+
+	$fake	
+}
+
+describe 'Get-AccessControl' {
+	$fields = @{
+		enable_access_control = ''
+		access_all_settings = '' }
+
+	mock 'Invoke-RouterControlPage' { ComposeFormFieldsFake $fields }
+
+	it 'outputs Disabled|NotApplicable when disabled' {
+		$fields['enable_access_control'] = '0'
+
+		$result = Get-AccessControl
+
+		$result.AccessControl | should be 'Disabled'
+		$result.NewDeviceAccess | should be 'NotApplicable'
+	}
+	it 'outputs Enabled|Blocked' {
+		$fields['enable_access_control'] = '1'
+		$fields['access_all_setting'] = '0'
+
+		$result = Get-AccessControl
+
+		$result.AccessControl | should be 'Enabled'
+		$result.NewDeviceAccess | should be 'Blocked'
+	}
+	it 'outputs Enabled|Allowed' {
+		$fields['enable_access_control'] = '1'
+		$fields['access_all_setting'] = '1'
+
+		$result = Get-AccessControl
+
+		$result.AccessControl | should be 'Enabled'
+		$result.NewDeviceAccess | should be 'Allowed'
+	}
+	it 'outputs ''??'' when fields are wrong/unrecognized (test 1/2)' {
+		$fields.Remove('enable_access_control')
+
+		$result = Get-AccessControl
+
+		$result.AccessControl | should be '??'
+		$result.NewDeviceAccess | should be 'NotApplicable'
+	}
+	it 'outputs ''??'' when fields are wrong/unrecognized (test 2/2)' {
+		$fields['enable_access_control'] = '1'
+		$fields.Remove('access_all_setting')
+
+		$result = Get-AccessControl
+
+		$result.AccessControl | should be 'Enabled'
+		$result.NewDeviceAccess | should be '??'
+	}
+}
+
 describe 'Add-Device' {
 	$fakeDevice = New-Object 'Device'
 
@@ -654,6 +771,46 @@ describe 'Add-Device' {
 	}
 }
 
+describe 'GetPostFieldsForAccessControl Enable/Disable' {
+	$fields = @{
+			enable_acl = 'original'
+			enable_access_control = 'original'
+			access_all = 'original' }
+
+	mock 'Invoke-RouterControlPage' { ComposeFormFieldsFake $fields }
+
+	$whenEnable      = GetPostFieldsForAccessControlEnable
+	$whenEnableAllow = GetPostFieldsForAccessControlEnable 'Allowed'
+	$whenEnableBlock = GetPostFieldsForAccessControlEnable 'Blocked'
+	$whenDisable     = GetPostFieldsForAccessControlDisable
+
+	it 'does not modify the router control page''s form fields' {
+		$fields.Count | should be 3
+		'enable_acl', 'enable_access_control', 'access_all' |
+				foreach { $fields[$_] | should be 'original' }
+	}
+	it 'sets correct fields when Enable' {
+		foreach ($resultFields in $whenEnable, $whenEnableAllow, $whenEnableBlock)
+		{
+			$resultFields['enable_acl'] | should be 'enable_acl'
+			$resultFields['enable_access_control'] | should be 'original'
+		}
+	}
+	it 'sets correct fields when Enable with no device access specified' {
+		$whenEnable['access_all'] | should be 'original'
+	}
+	it 'sets correct fields when Enable with new devices allowed' {
+		$whenEnableAllow['access_all'] | should be 'allow_all'
+	}
+	it 'sets correct fields when Enable with new devices blocked' {
+		$whenEnableBlock['access_all'] | should be 'block_all'
+	}
+	it 'sets correct fields when Disable' {
+		$whenDisable['enable_acl'] | should be $null
+		$whenDisable['enable_access_control'] | should be 'original'
+	}
+}
+
 describe 'GetPostFieldsForDeviceUpdate' {
 	context 'short circuit' {
 		it 'short-circuits and returns nothing when the RuleSettings field cannot be composed' {
@@ -666,19 +823,18 @@ describe 'GetPostFieldsForDeviceUpdate' {
 		}
 	}
 	context 'basic functionality' {
-		$fake = '{ "Forms" : [ { "Fields" : "stub" } ] }' | ConvertFrom-Json
-		$fake.Forms[0].Fields = @{ rule_settings = 'original'; rule_status_org = 'original' }
+		$fields = @{ rule_settings = 'original'; rule_status_org = 'original' }
 
-		mock 'Invoke-RouterControlPage' { $fake }
+		mock 'Invoke-RouterControlPage' { ComposeFormFieldsFake $fields }
 		mock 'ComposeRuleSettingsPostbackValue' { 'settings' }
 
 		$returned = GetPostFieldsForDeviceUpdate $null 'Allowed'
 
 		it 'does not modify the cached router control page''s form fields' {
-			$fake.Forms[0].Fields['rule_settings'] | should be 'original'
-			$fake.Forms[0].Fields['rule_status_org'] | should be 'original'
-			$fake.Forms[0].Fields['allow'] | should be $null
-			$fake.Forms[0].Fields['block'] | should be $null
+			$fields['rule_settings'] | should be 'original'
+			$fields['rule_status_org'] | should be 'original'
+			$fields['allow'] | should be $null
+			$fields['block'] | should be $null
 		}
 		it 'returns correct post fields to the postback when Allowed' {
 			$returned | should not be $null
@@ -693,12 +849,11 @@ describe 'GetPostFieldsForDeviceUpdate' {
 }
 
 describe 'GetPostFieldsForDeviceRemove' {
-	$fake = '{ "Forms" : [ { "Fields" : "stub" } ] }' | ConvertFrom-Json
-	$fake.Forms[0].Fields = @{
+	$fields = @{
 			delete_white_lists = 'original'
 			delete_black_lists = 'original' }
 
-	mock 'Invoke-RouterControlPage' { $fake } -Verifiable
+	mock 'Invoke-RouterControlPage' { ComposeFormFieldsFake $fields } -Verifiable
 			
 	$device = [Device] @{ MacAddress = 'AA:BB:CC:DD:EE:FF' }
 	$device.AccessControl = 'Allowed'
@@ -709,10 +864,10 @@ describe 'GetPostFieldsForDeviceRemove' {
 
 	it 'does not modify the cached router control page''s form fields' {
 		Assert-VerifiableMocks
-		$fake.Forms[0].Fields['delete_white_lists'] | should be 'original'
-		$fake.Forms[0].Fields['delete_black_lists'] | should be 'original'
-		$fake.Forms[0].Fields['delete_white'] | should be $null
-		$fake.Forms[0].Fields['delete_black'] | should be $null
+		$fields['delete_white_lists'] | should be 'original'
+		$fields['delete_black_lists'] | should be 'original'
+		$fields['delete_white'] | should be $null
+		$fields['delete_black'] | should be $null
 	}
 	it 'composes correct post fields when device in Allowed list' {
 		$allowedReturn['delete_white_lists'] | should be '1:AA:BB:CC:DD:EE:FF:'

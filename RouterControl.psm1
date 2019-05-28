@@ -490,6 +490,95 @@ function Add-Device ([Device] $device, [AccessControl] $access)
 	}
 }
 
+#.SYNOPSIS
+# Enable the router's access control functionality.
+#.PARAMETER NewDeviceAccess
+# The access behavior to apply to all new (unrecognized) devices.
+# When this parameter is omitted, the router's access control functionality will be enabled
+#  and the current (or previously set) access behavior for new devices will not modified.
+function Enable-AccessControl ([ValidateSet('Blocked','Allowed')] [AccessControl] $NewDeviceAccess)
+{
+	if ($NewDeviceAccess)
+	{
+		$postFields = GetPostFieldsForAccessControlEnable $NewDeviceAccess
+	}
+	else
+	{
+		$postFields = GetPostFieldsForAccessControlEnable
+	}
+	
+	Invoke-RouterControlPostback $postFields
+
+	Clear-CachedObject 'Invoke-RouterControlPage'
+}
+
+#.SYNOPSIS
+# Disable the router's access control functionality.
+function Disable-AccessControl
+{
+	$postFields = GetPostFieldsForAccessControlDisable
+	Invoke-RouterControlPostback $postFields
+
+	Clear-CachedObject 'Invoke-RouterControlPage'
+}
+
+#.SYNOPSIS
+#. Gets the current state of the router's access control functionality.
+function Get-AccessControl
+{
+	$page = Invoke-RouterControlPage
+	$fields = $page.Forms[0].Fields
+
+	$access = switch ($fields['enable_access_control'])
+	{
+		'1' { 'Enabled' }
+		'0' { 'Disabled' }
+		default { '??' }
+	}
+
+	$newDevice = if ($access -eq 'Enabled')
+	{
+		switch ($fields['access_all_setting'])
+		{
+			'0' { 'Blocked' }
+			'1' { 'Allowed' }
+			default { '??' }
+		}
+	}
+	else
+	{
+		'NotApplicable'
+	}
+
+	[PSCustomObject] @{ AccessControl = $access; NewDeviceAccess = $newDevice }
+}
+
+function GetPostFieldsForAccessControlEnable ([AccessControl] $newDeviceAccess)
+{
+	# acquire copy of current fields
+	$fields = [Hashtable]::new((Invoke-RouterControlPage).Forms[0].Fields)
+
+	$fields['enable_acl'] = 'enable_acl'
+
+	switch ($newDeviceAccess)
+	{
+		'Allowed' { $fields['access_all'] = 'allow_all' }
+		'Blocked' { $fields['access_all'] = 'block_all' }
+	}
+
+	$fields
+}
+
+function GetPostFieldsForAccessControlDisable
+{
+	# acquire copy of current fields
+	$fields = [Hashtable]::new((Invoke-RouterControlPage).Forms[0].Fields)
+
+	$fields.Remove('enable_acl')
+
+	$fields
+}
+
 function GetPostFieldsForDeviceUpdate ([Device] $device, [AccessControl] $access)
 {
 	$ruleSettings = ComposeRuleSettingsPostbackValue $device $access
@@ -744,10 +833,13 @@ function Invoke-RouterControlAddPostback ($form, $fields)
 
 
 Export-ModuleMember -Function @(
-		'Set-RouterCredential',
-		'Test-RouterCredential',
-		'Import-KnownDeviceCsv',
-		'Get-Device',
-		'Unblock-Device',
+		'Set-RouterCredential'
+		'Test-RouterCredential'
+		'Import-KnownDeviceCsv'
+		'Get-Device'
+		'Unblock-Device'
 		'Block-Device'
+		'Enable-AccessControl'
+		'Disable-AccessControl'
+		'Get-AccessControl'
 		)
