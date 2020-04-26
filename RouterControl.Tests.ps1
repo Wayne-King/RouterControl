@@ -277,6 +277,28 @@ describe 'Get-Device' {
 		Get-Device -Force
 		Assert-MockCalled 'Get-DeviceFromRouter' -Times 2 -Exactly
 	}
+
+	it 'filters returned devices when Name is specified' {
+		$filteredByName = Get-Device -Name 'Known1'
+		$filteredByPos =  Get-Device 'Known1'
+
+		$filteredByName.Count | should be 1
+		$filteredByName | should beExactly $filteredByPos
+		$filteredByName | should beExactly $devices[0]
+	}
+	it 'does not filter on detected name' {
+		Get-Device -Name 'Dev1' | should be $null
+	}
+	it 'treats Name value as a "contains text" filter' {
+		$filtered = Get-Device -Name 'ow'
+		$filtered | should beExactly $devices[0]
+	}
+	it 'caches all devices even when returned set is filtered' {
+		$forceFiltered = Get-Device -Name 'Known1' -Force
+		$forceFiltered | should beExactly $devices[0]
+
+		(Get-Device).Count | should be 2
+	}
 }
 
 describe 'Get-DeviceFromRouter' {

@@ -219,16 +219,28 @@ function Invoke-RouterControlPage-Core
 
 #.SYNOPSIS
 # Get the list of devices known and controlled by the router.
+#.PARAMETER Name
+# Optional wildcard value to filter the returned list by device Name.
 #.PARAMETER Force
 # Query the router for the list instead of returning a list that may have been cached from a prior call.
-function Get-Device ([switch] $Force)
+function Get-Device ([string] $Name, [switch] $Force)
 {
 	if ($Force)
 	{
 		Clear-CachedObject 'Get-Device'
 	}
 
-	Restore-CachedObject 'Get-Device' { @(Get-DeviceFromRouter | Merge-Device (Get-KnownDevice)) }
+	$devices = Restore-CachedObject 'Get-Device' `
+			{ @(Get-DeviceFromRouter | Merge-Device (Get-KnownDevice)) }
+
+	if ($Name)
+	{
+		$devices | Where-Object -Property 'Name' -like "*$Name*"
+	}
+	else
+	{
+		$devices
+	}
 }
 
 function Get-DeviceFromRouter
